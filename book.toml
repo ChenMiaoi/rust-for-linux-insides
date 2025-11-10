@@ -1,0 +1,5 @@
+[book]
+authors = ["Chen Miao"]
+language = "en"
+src = "src"
+title = "Rust for Linux Insides"
