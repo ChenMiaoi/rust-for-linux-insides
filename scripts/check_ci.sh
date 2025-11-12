@@ -153,6 +153,17 @@ echo ""
 # echo "✅ 'mdbook-trpl' installed successfully"
 # echo ""
 
+echo "🔤 Running spellcheck all scripts..."
+
+find . -name '*.sh' -print0 | xargs -0 shellcheck || {
+    echo "❌ Error: 'find . -name '*.sh' -print0 | xargs -0 shellcheck' failed"
+    popd > /dev/null 2>&1 || true
+    exit 1
+}
+
+echo "✅ Spellcheck script ran successfully"
+echo ""
+
 # ========================================
 # Step 6: Run spellcheck script
 # ========================================
