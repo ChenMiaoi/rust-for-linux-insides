@@ -10,7 +10,7 @@
 
 如果国内用户打算构建本项目，**并且当前主机上没有`rust`**，那么请参考[rsproxy](https://rsproxy.cn/)进行安装。
 
-安装成功后，请检查对应版本，本项目要求$rust \ version \ge 1.46$
+安装成功后，请检查对应版本，本项目要求\\( rust \ version \ge 1.46 \\)
 
 ``` bash
 cargo --version

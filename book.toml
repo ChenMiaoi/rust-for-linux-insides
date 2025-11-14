@@ -3,3 +3,6 @@ authors = ["Chen Miao <chenmiao@openatom.club>"]
 language = "en"
 src = "src"
 title = "Rust for Linux Insides"
+
+[output.html]
+mathjax-support = true
