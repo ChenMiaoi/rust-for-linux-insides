@@ -1,0 +1,3 @@
+[submodule "mdbook-check"]
+	path = mdbook-check
+	url = git@github.com:ChenMiaoi/mdbook-check.git

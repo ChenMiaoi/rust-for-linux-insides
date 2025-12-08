@@ -1,6 +1,6 @@
 [workspace]
-members = ["packages/tools"]
-default-members = ["packages/tools"]
+members = ["mdbook-check/packages/tools"]
+default-members = ["mdbook-check/packages/tools"]
 resolver = "2"
 exclude = [
     "linkchecker", # linkchecker is part of the CI workflow

@@ -2,12 +2,15 @@
 # Makefile for building and testing the book and Rust packages
 # =============================================
 
+MDBOOK_CHECK_ROOT := mdbook-check
+
 PACKAGES := \
-	packages/mdbook-trpl \
-	packages/trpl
+	$(MDBOOK_CHECK_ROOT)/packages/mdbook-trpl \
+	$(MDBOOK_CHECK_ROOT)/packages/trpl \
+	$(MDBOOK_CHECK_ROOT)/packages/autocorrect
 
 # Declare all targets as .PHONY (they do not produce files with matching names)
-.PHONY: build run watch check-ci clean help
+.PHONY: build run watch check-ci check-lint clean help
 
 # ---------------------------------------------
 # Build the mdBook documentation
@@ -34,9 +37,15 @@ watch: build
 #   - mdbook test: tests all code blocks in the book
 #   - custom script: additional CI validations
 # ---------------------------------------------
-check-ci:
+check-ci: check-lint
 	mdbook test
-	bash scripts/check_ci.sh
+	bash $(MDBOOK_CHECK_ROOT)/scripts/check_ci.sh
+
+# ---------------------------------------------
+# Run Lint checks
+# ---------------------------------------------
+check-lint:
+	bash $(MDBOOK_CHECK_ROOT)/scripts/check_lint.sh
 
 # ---------------------------------------------
 # Clean build artifacts and cargo targets
