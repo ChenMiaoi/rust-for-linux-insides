@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
+      with:
+        submodules: true
     - name: Update rustup
       run: rustup self update
     - name: Install Rust
@@ -32,16 +34,18 @@ jobs:
     # sure all the crates can be resolved when running the tests.
     - name: Build `trpl` crate
       run: |
-        cd packages/trpl
+        cd mdbook-check/packages/trpl
         cargo build
     - name: Run tests
       run:
-        mdbook test --library-path packages/trpl/target/debug/deps
+        mdbook test --library-path mdbook-check/packages/trpl/target/debug/deps
   package_tests:
     name: Run package tests
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
+      with:
+        submodules: true
     - name: Update rustup
       run: rustup self update
     - name: Install Rust
@@ -53,7 +57,7 @@ jobs:
       run: |
         cargo test
     - name: Run `mdbook-trpl` package tests
-      working-directory: packages/mdbook-trpl
+      working-directory: mdbook-check/packages/mdbook-trpl
       run: |
         cargo test
   lint:
@@ -61,6 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - name: Force fetch submodules
+      run: |
+        git submodule update --init
+        git submodule foreach --recursive git submodule update --init
     - name: Update rustup
       run: rustup self update
     - name: Install Rust
@@ -74,7 +85,7 @@ jobs:
         curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.45/mdbook-v0.4.45-x86_64-unknown-linux-gnu.tar.gz | tar -xz --directory=bin
         echo "$(pwd)/bin" >> "${GITHUB_PATH}"
     - name: Install mdbook-trpl binaries
-      run: cargo install --path packages/mdbook-trpl
+      run: cargo install --path mdbook-check/packages/mdbook-trpl
     - name: Install aspell
       run: sudo apt-get install aspell
     - name: Install shellcheck
@@ -87,18 +98,33 @@ jobs:
         aspell --version
         shellcheck --version
     - name: Shellcheck
-      run: find . -name '*.sh' -print0 | xargs -0 shellcheck
+      run: |
+        exclude_dirs=(
+            "*/packages/autocorrect/**"
+            "*/src/fuzz/books/codes/.venv/**"
+            "*/book/**"
+        )
+
+        find_args=()
+
+        for pattern in "${exclude_dirs[@]}"; do
+            find_args+=(-not -path "$pattern")
+        done
+        
+        find . -name "*.sh" -type f "${find_args[@]}" -exec shellcheck {} +
     - name: Spellcheck
-      run: bash ci/spellcheck.sh list
+      run: bash mdbook-check/ci/spellcheck.sh list
     - name: Lint for local file paths
       run: |
         mdbook build
         cargo run --bin lfp src
     - name: Validate references
-      run: bash ci/validate.sh
+      run: bash mdbook-check/ci/validate.sh
     - name: Check for broken links
       run: |
         curl -sSLo linkcheck.sh \
           https://raw.githubusercontent.com/rust-lang/rust/HEAD/src/tools/linkchecker/linkcheck.sh
         # Cannot use --all here because of the generated redirect pages aren't available.
         sh linkcheck.sh book
+    - name: Check Markdown Lint
+      run: make check-lint

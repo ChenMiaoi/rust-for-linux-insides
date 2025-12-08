@@ -15,7 +15,7 @@ LLD: LLD 20.1.8 (compatible with GNU linkers)
 
 ## Rust for Linux 环境搭建
 
-我们需要搭建一个 Rust for Linux 环境，我们就需要编译内核，然后通过 QEMU 运行所编译的内核镜像。为了方便起见，除了 QEMU 和 Linux 镜像文件，其余文件均采用已经处理好的网络资源文件(rootfs和disk image)。
+我们需要搭建一个 Rust for Linux 环境，我们就需要编译内核，然后通过 QEMU 运行所编译的内核镜像。为了方便起见，除了 QEMU 和 Linux 镜像文件，其余文件均采用已经处理好的网络资源文件 (rootfs 和 disk image)。
 
 ### 安装 Rust
 
@@ -60,7 +60,7 @@ clippy 0.1.91 (f8297e351a 2025-10-28)
 rustup component add rust-src rustfmt clippy
 ```
 
-针对于 Rust for Linux 开发，还需要额外安装`bindgen`，这用于 Rust 与 C语言之间的通信。
+针对于 Rust for Linux 开发，还需要额外安装`bindgen`，这用于 Rust 与 C 语言之间的通信。
 
 ``` bash
 cargo install --locked bindgen-cli
@@ -104,7 +104,7 @@ sudo dnf install qemu-system-x86 -y
 
 这里简单阐述一下为什么选择源码编译，因为源码编译可以自行选择安装版本，避免版本过久问题。
 
-首先安装所需的依赖包:
+首先安装所需的依赖包：
 
 ``` bash
 sudo dnf in ninja-build python3-sphinx python3-sphinx_rtd_theme glib2-devel libslirp-devel -y
@@ -143,19 +143,19 @@ Copyright (c) 2003-2025 Fabrice Bellard and the QEMU Project developers
 
 ### 构建 Linux 镜像
 
-提前准备好 Linux 编译所需要的依赖包:
+提前准备好 Linux 编译所需要的依赖包：
 
 ``` bash
 sudo dnf in gcc clang clang-tools-extra llvm lld gpg2 git gzip make openssl perl rsync binutils ncurses-devel flex bison openssl-devel elfutils-libelf-devel rpm-build
 ```
 
-准备好 Rust 环境后，我们就需要通过编译内核源码获取 Linux 镜像文件。首先，我们直接克隆 Rust for Linux 主线分支(**Linux内核主线源码也是可行的，只是相较于 Rust for Linux 主线分支支持的特性稍微少一些**)。
+准备好 Rust 环境后，我们就需要通过编译内核源码获取 Linux 镜像文件。首先，我们直接克隆 Rust for Linux 主线分支 (**Linux 内核主线源码也是可行的，只是相较于 Rust for Linux 主线分支支持的特性稍微少一些**)。
 
 ``` bash
 git clone https://github.com/Rust-for-Linux/linux.git rust-for-linux --depth=1
 ```
 
-进入到`rust-for-linux`目录中(这里将 Rust for Linux 主线代码重命名为`rust-for-linux`这是为了避免与`linux`内核主线重名)。然后通过如下命令检查 Rust 依赖和版本是否正确。
+进入到`rust-for-linux`目录中 (这里将 Rust for Linux 主线代码重命名为 `rust-for-linux` 这是为了避免与 `linux` 内核主线重名)。然后通过如下命令检查 Rust 依赖和版本是否正确。
 
 > **极其要注意的是，对于 Rust for Linux 的编译，LLVM 工具链的版本必须要 \\( \ge 15.0.0 \\)**
 
@@ -260,7 +260,7 @@ Debian GNU/Linux 12 localhost ttyS0
 localhost login:
 ```
 
-此时，就启动了对应的内核镜像，通过 `root` 用户登录(无密码)。当前启动的内核是自带内核，因此需要更换内核镜像。在这之前，我们还需要进行扩容操作，并且需要配置好 `ssh` 以方便将内核镜像传入到虚拟机中。
+此时，就启动了对应的内核镜像，通过 `root` 用户登录 (无密码)。当前启动的内核是自带内核，因此需要更换内核镜像。在这之前，我们还需要进行扩容操作，并且需要配置好 `ssh` 以方便将内核镜像传入到虚拟机中。
 
 ``` bash
 (virt-machine) uname -a
@@ -277,7 +277,7 @@ Linux localhost 6.1.0-32-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.129-1 (2025-03-
 
 ![disk resize 2](../imgs/png/disk_resize_2.png)
 
-然后键入两次回车，发现 `Linux root` 的大小更改后，选择 `Write` 选项，然后键入 `yes` 确定修改，如下所示:
+然后键入两次回车，发现 `Linux root` 的大小更改后，选择 `Write` 选项，然后键入 `yes` 确定修改，如下所示：
 
 ![disk resize 3](../imgs/png/disk_resize_3.png)
 

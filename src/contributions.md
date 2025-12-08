@@ -1,10 +1,10 @@
 # 如何贡献 Rust for Linux Insides 项目
 
-本项目主要采用了`mdbook`进行构建，本节主要介绍了如何在用户本地自行搭建Rust for Linux Insides进行贡献，并介绍贡献的一些规范。
+本项目主要采用了`mdbook`进行构建，本节主要介绍了如何在用户本地自行搭建 Rust for Linux Insides 进行贡献，并介绍贡献的一些规范。
 
-**本项目目前只支持Ubuntu/Debian发行版本的构建流程，对于Rocky/Fedora发行版本尚未完成**。
+**本项目目前以支持 Ubuntu/Debian 和 Rocky/Fedora 发行版本的构建流程**。
 
-## 安装Rust
+## 安装 Rust
 
 - 国内用户
 
@@ -25,7 +25,7 @@ cargo 1.91.0 (ea2d97820 2025-10-10)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-## 安装mdbook
+## 安装 mdbook
 
 安装`mdbook cli`的方式有多种，本文档主要采用下方介绍的第一种方式，如有其他需要，请参考其他方式。
 
@@ -58,7 +58,7 @@ mdbook v0.4.52
 
 ## 构建项目
 
-完成上面的依赖安装后(`rust`和`mdbook`)，读者可以`fork`本仓库后，进行克隆到本地(此处直接使用了上游仓库，请读者自行更换为对应的仓库链接)：
+完成上面的依赖安装后 (`rust`和`mdbook`)，读者可以`fork`本仓库后，进行克隆到本地 (此处直接使用了上游仓库，请读者自行更换为对应的仓库链接)：
 
 ``` bash
 git clone git@github.com:hust-open-atom-club/rust-for-linux-insides.git
@@ -89,7 +89,7 @@ Use 'make <target>' to run a specific action.
 
 > 虚拟机配置
 >> 如果用户在物理机上构建，那么不需要参考这一小节。
->> 如果使用虚拟机，在有防火墙的情况下无法直接查看到Rust for Linux Insides在浏览器的页面(默认虚拟机是server version with no GUI)；因此需要关闭虚拟机防火墙，并将运行的监听ip绑定为"0.0.0.0"
+>> 如果使用虚拟机，在有防火墙的情况下无法直接查看到 Rust for Linux Insides 在浏览器的页面 (默认虚拟机是 server version with no GUI)；因此需要关闭虚拟机防火墙，并将运行的监听 ip 绑定为"0.0.0.0"
 
 ``` bash
 sudo systemctl stop ufw
@@ -109,7 +109,7 @@ make run
 
 ## 提交代码规范
 
-假设已经做完任何更改，请使用`check-ci`命令进行检查，以便提交Pull Request时能够通过CI检查。
+假设已经做完任何更改，请使用 `check-ci` 命令进行检查，以便提交 Pull Request 时能够通过 CI 检查。
 
 ``` bash
 make check-ci
