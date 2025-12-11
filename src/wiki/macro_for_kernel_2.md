@@ -206,3 +206,22 @@ assert_eq!(raw, "r#Raw");
 let my_ident_raw = format_ident!("{}Is{}", my_ident, raw);
 assert_eq!(my_ident_raw, "MyIdentIsRaw");
 ```
+
+## Syn 语法解析层
+
+[syn](https://docs.rs/syn/2.0.106/syn/) 库的目的是将 Rust 过程宏的输入 TokenStream 解析成容易操作的、强类型的 抽象语法树 (AST) 结构。它是处理宏输入的核心工具。
+
+syn crate 尽管有一些广泛场景使用的 API，但我们的目的是了解内核如何使用宏，因此只会讲解 syn 中较为常用，且与宏相关的部分。
+
+- Data Structures：syn 提供了一个完整的语法树，可以表示任何有效的 Rust  源代码。该语法树以 `syn::File` 为源头，代表一个完整的源文件，但还有其他入口点可能对过程宏有用，包括 `syn::Item`、`syn::Expr` 和 `syn::Type`。
+- Dervies：对于派生宏而言，我们之前见过 `syn::DeriveInput`，其是派生宏的三个合法输入项中的任意一个。
+- Parsing：**syn 中的解析功能是围绕具有 `fn(ParseStream) -> Result<T>` 签名的解析函数构建的，每个由 syn 定义的语法树节点都可以单独解析，并且可以作为自定义语法的构建块**。
+- Location Information：每个被 syn 解析的 Token 都关联着一个 Span，它会跟踪该 Token 的行号和列号信息，追溯回该 Token 的源代码位置。
+
+## proc-macro 基础 API 层
+
+proc-macro 是 Rust 编译器自带的标准库，它提供了过程宏运行环境所需的基础 API。它位于最底层，是所有宏构建的基础。
+
+## proc-macro2
+
+**`proc_macro` 类型完全专属于过程宏，并且永远不会出现在过程宏之外的代码中，而 `proc_macro2` 类型可能出现在任何地方，包括测试和非宏代码。这就是为什么目前过程宏生态也围绕 `proc_macro2` 进行构建，因为这样可以确保库是可单元测试的，并且可在非宏上下文中使用**。
