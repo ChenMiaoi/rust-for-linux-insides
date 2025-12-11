@@ -218,10 +218,138 @@ syn crate 尽管有一些广泛场景使用的 API，但我们的目的是了解
 - Parsing：**syn 中的解析功能是围绕具有 `fn(ParseStream) -> Result<T>` 签名的解析函数构建的，每个由 syn 定义的语法树节点都可以单独解析，并且可以作为自定义语法的构建块**。
 - Location Information：每个被 syn 解析的 Token 都关联着一个 Span，它会跟踪该 Token 的行号和列号信息，追溯回该 Token 的源代码位置。
 
+目前，内核使用了 `syn v2.0.106` 版本，并在源码中移除了 `unicode-ident`。
+
 ## proc-macro 基础 API 层
 
 proc-macro 是 Rust 编译器自带的标准库，它提供了过程宏运行环境所需的基础 API。它位于最底层，是所有宏构建的基础。
 
 ## proc-macro2
 
-**`proc_macro` 类型完全专属于过程宏，并且永远不会出现在过程宏之外的代码中，而 `proc_macro2` 类型可能出现在任何地方，包括测试和非宏代码。这就是为什么目前过程宏生态也围绕 `proc_macro2` 进行构建，因为这样可以确保库是可单元测试的，并且可在非宏上下文中使用**。
+**`proc_macro` 类型完全专属于过程宏，并且永远不会出现在过程宏之外的代码中，而 [proc_macro2](https://docs.rs/proc-macro2/1.0.101/proc_macro2/) 类型可能出现在任何地方，包括测试和非宏代码。这就是为什么目前过程宏生态也围绕 `proc_macro2` 进行构建，因为这样可以确保库是可单元测试的，并且可在非宏上下文中使用**。
+
+目前，内核使用了 `proc_macro2 v1.0.101` 版本，并在源码中移除了 `unicode-ident`。
+
+## Using in Kernel
+
+在内核中，这三个外部库都是通过 Makefile 中的规则直接进行编译的：
+
+``` Makefile
+# rust/Makefile:507
+quiet_cmd_rustc_procmacrolibrary = $(RUSTC_OR_CLIPPY_QUIET) PL $@
+      cmd_rustc_procmacrolibrary = \
+    $(if $(skip_clippy),$(RUSTC),$(RUSTC_OR_CLIPPY)) \
+        $(filter-out $(skip_flags),$(rust_common_flags) $(rustc_target_flags)) \
+        --emit=dep-info,link --crate-type rlib -O \
+        --out-dir $(objtree)/$(obj) -L$(objtree)/$(obj) \
+        --crate-name $(patsubst lib%.rlib,%,$(notdir $@)) $<; \
+    mv $(objtree)/$(obj)/$(patsubst lib%.rlib,%,$(notdir $@)).d $(depfile); \
+    sed -i '/^\#/d' $(depfile)
+```
+
+上面这段编译命令则是三个外部库公用的编译逻辑，分别传入不同的参数进行编译。接下来我们首先学习公用部分逻辑。
+
+首先通过 `skip_clippy` 决定最终参与编译的工具，然后通过检查 `skip_flags` 来从 `rust_common_flags` 和 `rustc_target_flags` 中移除指定标志。并且根据目录名生成以类似于 `lib#{dir}.rlib` 的 `rlib` 类型文件 (Rust 静态库)。然后对生成的依赖文件 (.d) 移动到期望的路径，并且删除所有以 `#` 开头的行。
+
+### proc_macro2 build
+
+``` Makefile
+# rust/Makefile:517
+$(obj)/libproc_macro2.rlib: private skip_clippy = 1
+$(obj)/libproc_macro2.rlib: private rustc_target_flags = $(proc_macro2-flags)
+```
+
+上面的处理逻辑中，`proc_macro2` 依赖了 `rustc_target_flags` 私有变量，该变量由 `proc_macro2-flags` 构建：
+
+``` Makefile
+proc_macro2-cfgs := \
+    feature="proc-macro" \
+    wrap_proc_macro \
+    $(if $(call rustc-min-version,108800),proc_macro_span_file proc_macro_span_location)
+
+proc_macro2-flags := \
+    --cap-lints=allow \
+    -Zcrate-attr='feature(proc_macro_byte_character,proc_macro_c_str_literals)' \
+    $(call cfgs-to-flags,$(proc_macro2-cfgs))
+```
+
+这个配置启用了 `feature="proc-macro"`，并且启用了更现代、更详细的 Span 信息。
+
+除此之外，下方是关于 `proc_macro2` 编译的详细命令，并产生了 `libproc_macro2.rlib` 文件。
+
+``` bash
+savedcmd_rust/libproc_macro2.rlib := rustc --edition=2021 -Zbinary_dep_depinfo=y -Astable_features -Dnon_ascii_idents -Dunsafe_op_in_unsafe_fn -Wmissing_docs -Wrust_2018_idioms -Wunreachable_pub -Wclippy::all -Wclippy::as_ptr_cast_mut -Wclippy::as_underscore -Wclippy::cast_lossless -Wclippy::ignored_unit_patterns -Wclippy::mut_mut -Wclippy::needless_bitwise_bool -Aclippy::needless_lifetimes -Wclippy::no_mangle_with_rust_abi -Wclippy::ptr_as_ptr -Wclippy::ptr_cast_constness -Wclippy::ref_as_ptr -Wclippy::undocumented_unsafe_blocks -Wclippy::unnecessary_safety_comment -Wclippy::unnecessary_safety_doc -Wrustdoc::missing_crate_level_docs -Wrustdoc::unescaped_backticks --cap-lints=allow -Zcrate-attr='feature(proc_macro_byte_character,proc_macro_c_str_literals)' --cfg='feature="proc-macro"' --cfg='wrap_proc_macro' --cfg='proc_macro_span_file' --cfg='proc_macro_span_location' --emit=dep-info,link --crate-type rlib -O --out-dir ./rust -L./rust --crate-name proc_macro2 rust/proc-macro2/lib.rs; mv ./rust/proc_macro2.d rust/.libproc_macro2.rlib.d; sed -i '/^$(pound)/d' rust/.libproc_macro2.rlib.d
+```
+
+### quote build
+
+quote 的编译参数如下所示：
+
+``` Makefile
+# rust/Makfile: 522
+$(obj)/libquote.rlib: private skip_clippy = 1
+$(obj)/libquote.rlib: private skip_flags = $(quote-skip_flags)
+$(obj)/libquote.rlib: private rustc_target_flags = $(quote-flags)
+```
+
+其中，`skip_flags` 和 `rustc_targe_flags` 作为参数被使用。下面是关于两个参数具体的构建信息：
+
+``` Makefile
+# rust/Makefile:92
+quote-cfgs := \
+    feature="proc-macro"
+
+quote-skip_flags := \
+    --edition=2021
+
+quote-flags := \
+    --edition=2018 \
+    --cap-lints=allow \
+    --extern proc_macro2
+```
+
+quote 的使用需要启用 `proc-macro` 特性，然后通过 `--extern proc_macro2` 保证 `proc_macro2` 被依赖到 `quote` 编译中。并且限制了所有的 Lint 警告，保证了核心依赖库在编译时不会因警告而中止。
+
+除此之外，下方是关于 `quote` 编译的详细命令，并产生了 `libquote.rlib` 文件。
+
+``` bash
+savedcmd_rust/libquote.rlib := rustc -Zbinary_dep_depinfo=y -Astable_features -Dnon_ascii_idents -Dunsafe_op_in_unsafe_fn -Wmissing_docs -Wrust_2018_idioms -Wunreachable_pub -Wclippy::all -Wclippy::as_ptr_cast_mut -Wclippy::as_underscore -Wclippy::cast_lossless -Wclippy::ignored_unit_patterns -Wclippy::mut_mut -Wclippy::needless_bitwise_bool -Aclippy::needless_lifetimes -Wclippy::no_mangle_with_rust_abi -Wclippy::ptr_as_ptr -Wclippy::ptr_cast_constness -Wclippy::ref_as_ptr -Wclippy::undocumented_unsafe_blocks -Wclippy::unnecessary_safety_comment -Wclippy::unnecessary_safety_doc -Wrustdoc::missing_crate_level_docs -Wrustdoc::unescaped_backticks --edition=2018 --cap-lints=allow --extern proc_macro2 --cfg='feature="proc-macro"' --emit=dep-info,link --crate-type rlib -O --out-dir ./rust -L./rust --crate-name quote rust/quote/lib.rs; mv ./rust/quote.d rust/.libquote.rlib.d; sed -i '/^$(pound)/d' rust/.libquote.rlib.d
+```
+
+### syn build
+
+syn 的编译参数如下所示：
+
+``` Makefile
+# rust/Makefile:528
+$(obj)/libsyn.rlib: private skip_clippy = 1
+$(obj)/libsyn.rlib: private rustc_target_flags = $(syn-flags)
+```
+
+对于 syn 的编译参数就不再进行赘述，其依赖了 `proc_macro2` 和 `quote` 两个库：
+
+``` Makefile
+# rust/Makefile:114
+syn-flags := \
+    --cap-lints=allow \
+    --extern proc_macro2 \
+    --extern quote
+```
+
+除此之外，下方是关于 `syn` 编译的详细命令，并产生了 `libsyn.rlib` 文件。
+
+``` bash
+savedcmd_rust/libsyn.rlib := rustc --edition=2021 -Zbinary_dep_depinfo=y -Astable_features -Dnon_ascii_idents -Dunsafe_op_in_unsafe_fn -Wmissing_docs -Wrust_2018_idioms -Wunreachable_pub -Wclippy::all -Wclippy::as_ptr_cast_mut -Wclippy::as_underscore -Wclippy::cast_lossless -Wclippy::ignored_unit_patterns -Wclippy::mut_mut -Wclippy::needless_bitwise_bool -Aclippy::needless_lifetimes -Wclippy::no_mangle_with_rust_abi -Wclippy::ptr_as_ptr -Wclippy::ptr_cast_constness -Wclippy::ref_as_ptr -Wclippy::undocumented_unsafe_blocks -Wclippy::unnecessary_safety_comment -Wclippy::unnecessary_safety_doc -Wrustdoc::missing_crate_level_docs -Wrustdoc::unescaped_backticks --cap-lints=allow --extern proc_macro2 --extern quote --cfg='feature="clone-impls"' --cfg='feature="derive"' --cfg='feature="full"' --cfg='feature="parsing"' --cfg='feature="printing"' --cfg='feature="proc-macro"' --cfg='feature="visit-mut"' --emit=dep-info,link --crate-type rlib -O --out-dir ./rust -L./rust --crate-name syn rust/syn/lib.rs; mv ./rust/syn.d rust/.libsyn.rlib.d; sed -i '/^$(pound)/d' rust/.libsyn.rlib.d
+```
+
+---
+
+至此，对于内核中关于宏的依赖库就讲解完毕，下一章中，我们会详细介绍 `macros` 内核库所提供的 API 以及对应的实现。
+
+---
+
+参考链接：
+
+- [quote](https://docs.rs/quote/1.0.40/quote/)
+- [syn](https://docs.rs/syn/2.0.106/syn/)
+- [proc_macro2](https://docs.rs/proc-macro2/1.0.101/proc_macro2/)
