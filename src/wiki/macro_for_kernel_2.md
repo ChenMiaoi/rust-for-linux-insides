@@ -1,0 +1,208 @@
+# 内核中 Rust 宏的使用手册 (二)
+
+我们已经掌握了 Rust 宏的使用方法。接下来，为了深入理解 Rust 内核中的宏是如何构建和运作的，我们需要了解几个核心构建宏的软件包。
+
+我们将从应用层 (如何用 `quote` 生成代码) 开始，逐渐深入到解析层 (如何用 `syn` 处理输入代码)，最终触及核心原理 (`proc-macro` 库提供的基础 API)。
+
+## Quote 代码生成层
+
+[quote](https://docs.rs/quote/1.0.40/quote/) 库的目的是将 Rust 抽象语法树 (Abstract Syntax Tree, AST) 的片段转换回可编译的 Rust 代码 (Tokens)。它是构建宏输出的核心工具。
+
+Rust 中的过程宏接收一个 Token 流作为输入，执行任意的 Rust 代码以确定如何处理这些 Token，并生成一个 Token 流返回给编译器，以便编译到调用者的 crate 中。`Quasi-quoting` 是解决其中一部分问题的方法——生成返回给编译器的 Token。
+
+`Quasi-quoting` 的想法是，我们编写代码，但将其视为数据。在 `quote!` 宏中，我们可以编写看起来像代码的内容，让编辑器或 IDE 识别。同时，我们还可以对这部分数据进行传递、修改，最后再将其返回给编译器作为 Token，编译到宏调用者的 crate 中。
+
+在内核中，截至目前，该 `quote` 模块的版本为 `1.0.40`。
+
+### quote! 宏
+
+`quote!` 宏对输入进行变量插值后以 `proc_macro2::TokenStream` 的形式输出；在宏中返回 Token 给编译器时，使用 `.into` 将结果转换为 `proc_macro::TokenStream`。这在[后文](#return-type)会讲到其返回值类型的差异。
+
+#### Interpolation
+
+变量插值 (Variable Interpolation) 使用了类似于宏的语法 `#var`。这会在 `quote!` 宏中捕获当前作用域中的 `var` 变量的值。任何实现了 `ToTokens` 特征的类型都可以进行插值。这包括了大多数 Rust 原生类型以及通过 `syn crate` 中的大部分语法树类型。
+
+该语法也可以使用类似于生成宏类似的重复语法，例如：`#(...)*` 或 `#(...), *`。这会遍历任何重复插值的变量元素。
+
+**任何插值的 Token 都保留其 `ToTokens` 实现提供的 `Span` 信息**。
+
+#### Return Type
+
+`quote!` 宏的计算类型为 `proc_macro2::TokenStream` 的表达式；并且 Rust 的过程宏预期的返回类型为 `proc_macro::TokenStream`。
+
+这两种类型的区别在于，**`proc_macro` 类型完全专属于过程宏，并且永远不会出现在过程宏之外的代码中，而 `proc_macro2` 类型可能出现在任何地方，包括测试和非宏代码**。这就是为什么目前过程宏生态也围绕 `proc_macro2` 进行构建，因为这样可以确保库是可单元测试的，并且可在非宏上下文中使用。
+
+#### Example
+
+``` rs
+extern crate proc_macro;
+
+use proc_macro::TokenStream;
+use quote::quote;
+
+#[proc_macro_derive(HeapSize)]
+pub fn derive_heap_size(input: TokenStream) -> TokenStream {
+    // Parse the input and figure out what implementation to generate...
+    let name = /* ... */;
+    let expr = /* ... */;
+
+    let expanded = quote! {
+        // The generated impl.
+        impl heapsize::HeapSize for #name {
+            fn heap_size_of_children(&self) -> usize {
+                #expr
+            }
+        }
+    };
+
+    // Hand the output tokens back to the compiler.
+    TokenStream::from(expanded)
+}
+```
+
+上面展示的是一个基本的过程宏结构，在上一章节中我们也有描述。在该构建中，`quote!` 宏会捕获 `#name` 和 `#expr` 对应的变量，然后插值进入，形成一个可编译的完整代码。
+
+通常而言，我们不会一次性地构造出完整的 `TokenStream`。不同的部分可能来自于不同的辅助函数。`quote!` 自身产生的 Token 也实现了 `ToToken`，因此可以被插值到其他 `quote!` 宏中：
+
+``` rs
+let type_definition = quote! {...};
+let methods = quote! {...};
+
+let tokens = quote! {
+    #type_definition
+    #methods
+};
+```
+
+有时候，我们需要以某种方式修改一个变量 (该变量来源于宏输入的某个位置)。直接的修改变量通常没有任何作用，其解决方法通常是**构建一个具有正确值的新 Token，因此 `quote crate` 也提供了 `format_ident!` 来正确的完成这一操作 (关于具体的 `format_ident!` 宏的操作，请参考[后文](#format_ident-宏))：
+
+``` rs
+// incorrect
+// quote! {
+//     let mut _#ident = 0;
+// }
+
+let varname = format_ident!("_{}", ident);
+quote! {
+    let mut #varname = 0;
+}
+```
+
+当然，在宏中进行构造操作也是十分常见的例子，例如，我们有一个 `field_type` 的变量，其类型为 `syn::Type` 并希望调用该构造函数：
+
+``` rs
+// incorrect
+quote! {
+    let value = #field_type::new();
+}
+```
+
+这段代码你说完全错误，也不尽然。如果 `field_type` 是 `String` 类型，那么展开后的代码时 `String::new()`，这是能够接受的。如果是类似于 `Vec<i32>` 这样的类型，其展开后的代码是 `Vec<i32>::new()`，这就导致了无效的语法。通常，在宏中，如下方式更为方便：
+
+``` rs
+quote! {
+    let value = <#field_type>::new();
+}
+```
+
+当然，这对于 `Trait` 也是一样的。
+
+在 `quote!` 宏中，文档注释和字符串字面量都不会被插值所捕获：
+
+``` rs
+quote! {
+    /// try to interpolate: #ident
+    ///
+    /// ...
+    #[doc = "try to interpolate: #ident"]
+}
+```
+
+**构建涉及变量的文档注释的最佳方式是通过在 `quote!` 宏之外格式化文档字符串字面**：
+
+``` rs
+let msg = format!(...);
+quote! {
+    #[doc = #msg]
+    ///
+    /// ...
+}
+```
+
+当插值元组或者元组结构体的索引时，通常将其转为 `syn::Index` 的方式进行插值：
+
+``` rs
+let i = (0..self.fields.len()).map(syn::Index::from);
+
+// expands to 0 + self.0.heap_size() + self.1.heap_size() + ...
+quote! {
+    0 #( + self.#i.heap_size() )*
+}
+```
+
+### quote_spanned! 宏
+
+`quote_spanned!` 与基本的 `quote!` 宏作用相同，都是作用于生成 `TokenStream`，但其增加了一个功能：**显式指定 TokenStream 中所有 Token 的 Span 信息 (代码位置信息)**。
+
+`quote_spanned!` 宏提供了一种 `span` 表达式，该表达式应该尽量简单，如果超过了几个字符的内容，应当使用变量，**在 `=>` 标记前不应该有空格**：
+
+``` rs
+let span = /* ... */;
+
+// On one line, use parentheses.
+let tokens = quote_spanned!(span=> Box::into_raw(Box::new(#init)));
+
+// On multiple lines, place the span at the top and use braces.
+let tokens = quote_spanned! {span=>
+    Box::into_raw(Box::new(#init))
+};
+```
+
+#### Example
+
+下面的过程宏代码会通过 `quote_spanned!` 宏来断言某个特定的 Rust 类型是否实现了 `Sync` 特征，以便安全地在多个线程之间共享引用：
+
+``` rs
+let ty_span = ty.span();
+let assert_sync = quote_spanned! {ty_span=>
+    struct _AssertSync where #ty: Sync;
+};
+```
+
+`ty.span` 获取了该类型用户源代码定义位置的行和列，而非用户调用宏的哪一行。如果断言失败，用户将看到如下错误，并且其类型输入位置在错误中被高亮显示：
+
+``` bash
+error[E0277]: the trait bound `*const (): std::marker::Sync` is not satisfied
+  --> src/main.rs:10:21
+   |
+10 |     static ref PTR: *const () = &();
+   |                     ^^^^^^^^^ `*const ()` cannot be shared between threads safely
+```
+
+在这个示例中，使用 `span` 的原因是因为 `where` 字句需要带有用户输入类型的行和列信息，这样编译器才能将错误信息正确的显示。
+
+### format_ident! 宏
+
+`format_ident!` 宏用于构建 `Ident` 的格式化宏，其语法是从 `format!` 宏复制过来的，支持位置参数和命名参数：
+
+- `{}` 针对于 [IdentFragment](https://docs.rs/quote/1.0.40/quote/trait.IdentFragment.html)
+- `{:o}` 针对于 [Octal](https://doc.rust-lang.org/core/fmt/trait.Octal.html)
+- `{:x}` 针对于 [LowerHex](https://doc.rust-lang.org/core/fmt/trait.LowerHex.html)
+- `{:X}` 针对于 [UpperHex](https://doc.rust-lang.org/core/fmt/trait.UpperHex.html)
+- `{:b}` 针对于 [Binary](https://doc.rust-lang.org/core/fmt/trait.Binary.html)
+
+`format_ident!` 宏支持传递 `span` 用作与最终标识符的跨度，其默认为 `Span::call_site`。
+
+#### Example
+
+``` rs
+let my_ident = format_ident!("My{}", "Ident");
+assert_eq!(my_ident, "MyIdent");
+
+// If have `r#` prefix, it will be removed by Ident
+let raw = format_ident!("r#Raw");
+assert_eq!(raw, "r#Raw");
+
+let my_ident_raw = format_ident!("{}Is{}", my_ident, raw);
+assert_eq!(my_ident_raw, "MyIdentIsRaw");
+```
